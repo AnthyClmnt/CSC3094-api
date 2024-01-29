@@ -16,8 +16,9 @@ async def register(user_details: UserRegistration):
     user_details.password = auth_handler.getPasswordHash(user_details.password)
     user_id = database.register(user_details)
 
-    token = auth_handler.encodeToken(user_id)
-    return Token(authToken=token)
+    access_token = auth_handler.encodeToken(user_id)
+    refresh_token = auth_handler.encodeToken(user_id, 10800)
+    return Token(accessToken=access_token, refreshToken=refresh_token)
 
 
 @auth_router.post("/login", response_model=Token)
@@ -29,10 +30,19 @@ async def login(user_details: UserLogin):
     if not auth_handler.verifyPassword(user_details.password, user[2]):
         raise HTTPException(status_code=401, detail='Invalid Email/Password')
 
-    token = auth_handler.encodeToken(user[0])
-    return Token(authToken=token)
+    access_token = auth_handler.encodeToken(user[0])
+    refresh_token = auth_handler.encodeToken(user[0], 10800)
+    return Token(accessToken=access_token, refreshToken=refresh_token)
 
 
 @auth_router.post("/validate-token", response_model=bool)
 async def validateToken(token: Token):
-    return auth_handler.decodeToken(token.authToken, True)
+    return auth_handler.decodeToken(token.accessToken, True)
+
+
+@auth_router.post("/refresh-access-token", response_model=Token)
+async def refreshAccessToken(refreshToken: Token):
+    user_id = auth_handler.decodeToken(refreshToken.refreshToken)
+
+    access_token = auth_handler.encodeToken(user_id)
+    return Token(accessToken=access_token, refreshToken=refreshToken.refreshToken)

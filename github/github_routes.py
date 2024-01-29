@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from auth.auth_utils import AuthHandler
-from models import GitHubCode, GitHubRepo, RepoCommit
+from models import GitHubCode, GitHubRepo, RepoCommit, CommitDetails, CommitStats, CommitFiles
 from typing import List
 import httpx
 import os
@@ -101,5 +101,31 @@ async def getCommits(repoOwner: str, repoName: str, user_id=Depends(auth_handler
 
             repo_commits = response.json()
             return [RepoCommit(**commit) for commit in repo_commits]
+    else:
+        raise HTTPException(status_code=400, detail="Github not connected")
+
+
+@github_router.get("/commit/changes", response_model=CommitDetails)
+async def getCommitChanges(sha: str, repoOwner: str, repoName: str, user_id=Depends(auth_handler.authWrapper)):
+    token = getGitToken(user_id)
+    if token:
+        headers = {"Authorization": f"Bearer {token[0]}"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://api.github.com/repos/{repoOwner}/{repoName}/commits/{sha}",
+                headers=headers
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail="GitHub API request failed")
+
+            repo_commits_details = response.json()
+            commitDetails = CommitDetails(
+                sha=repo_commits_details['sha'],
+                commit=repo_commits_details['commit'],
+                stats=CommitStats(**repo_commits_details['stats']),
+                files=[CommitFiles(**file_data) for file_data in repo_commits_details['files']]
+            )
+
+            return commitDetails
     else:
         raise HTTPException(status_code=400, detail="Github not connected")

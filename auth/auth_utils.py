@@ -19,11 +19,11 @@ class AuthHandler:
     def verifyPassword(self, plainPassword, hashedPassword):
         return self.pwd_context.verify(plainPassword, hashedPassword)
 
-    def encodeToken(self, userId):
+    def encodeToken(self, userId, expiration_minutes=20):
         payload = {
             'iss': 'dissertation',
             'sub': str(userId),
-            'exp': datetime.utcnow() + timedelta(minutes=20),
+            'exp': datetime.utcnow() + timedelta(minutes=expiration_minutes),
             'iat': datetime.utcnow()
         }
         return jwt.encode(
@@ -40,7 +40,7 @@ class AuthHandler:
             return payload['sub']
         except jwt.ExpiredSignatureError:
             if boolResp:
-                return False
+                return True
             raise HTTPException(status_code=401, detail='Token has Expired')
         except jwt.InvalidTokenError:
             if boolResp:
@@ -49,6 +49,3 @@ class AuthHandler:
 
     def authWrapper(self, auth: HTTPAuthorizationCredentials = Security(security)):
         return self.decodeToken(auth.credentials)
-
-
-

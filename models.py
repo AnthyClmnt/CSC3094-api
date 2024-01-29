@@ -1,6 +1,6 @@
 # models.py
 from pydantic import BaseModel, HttpUrl, Field
-from typing import Optional
+from typing import Optional, List
 
 
 class UserRegistration(BaseModel):
@@ -26,7 +26,8 @@ class GitHubCode(BaseModel):
 
 
 class Token(BaseModel):
-    authToken: str
+    accessToken: str
+    refreshToken: str
 
 
 class RepoOwner(BaseModel):
@@ -64,3 +65,24 @@ class CommitParams(BaseModel):
     repoOwner: str
     repoName: str
 
+
+class CommitStats(BaseModel):
+    total: int
+    additions: int
+    deletions: int
+
+
+class CommitFiles(BaseModel):
+    filename: str
+    status: str
+    additions: int
+    deletions: int
+    changes: int
+    patch: Optional[str] = None
+
+
+class CommitDetails(BaseModel):
+    sha: str
+    commit: Commit
+    stats: CommitStats
+    files: List[CommitFiles]
