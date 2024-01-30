@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 import database
 from models import UserRegistration, Token, UserLogin
 from .auth_utils import AuthHandler
+import httpx
 
 auth_router = APIRouter(
     prefix='/auth',
@@ -45,10 +46,21 @@ async def validateToken(token: Token):
     user_id = auth_handler.decodeToken(token.accessToken)
     token = database.getGitToken(user_id)
 
-    if token:
-        return True
-    else:
+    if token is None:
         return False
+    else:
+        headers = {"Authorization": f"Bearer {token[0]}"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://api.github.com/issues",
+                headers=headers
+            )
+
+            if response.status_code != 200:
+                database.removeGitHubToken(user_id)
+                return False
+            else:
+                return True
 
 
 @auth_router.post("/refresh-access-token", response_model=Token)

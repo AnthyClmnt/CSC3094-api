@@ -103,3 +103,13 @@ def getGitToken(user_id: str) -> str:
         return token
     except Exception:
         raise HTTPException(status_code=400, detail="Unable to find Github access token")
+
+
+def removeGitHubToken(user_id: str):
+    try:
+        conn, cursor = connect_db()
+        cursor.execute("DELETE FROM githubTokens WHERE user_id=?", (user_id,))
+
+        close_db(conn)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Unable to remove Github access token")
