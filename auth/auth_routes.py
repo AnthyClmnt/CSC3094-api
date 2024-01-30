@@ -40,6 +40,17 @@ async def validateToken(token: Token):
     return auth_handler.decodeToken(token.accessToken, True)
 
 
+@auth_router.post("/validate-connection", response_model=bool)
+async def validateToken(token: Token):
+    user_id = auth_handler.decodeToken(token.accessToken)
+    token = database.getGitToken(user_id)
+
+    if token:
+        return True
+    else:
+        return False
+
+
 @auth_router.post("/refresh-access-token", response_model=Token)
 async def refreshAccessToken(refreshToken: Token):
     user_id = auth_handler.decodeToken(refreshToken.refreshToken)

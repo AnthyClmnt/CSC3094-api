@@ -58,7 +58,7 @@ def register(user: models.UserRegistration):
         user_id = cursor.fetchone()
 
         close_db(conn)
-        return user_id
+        return user_id[0]
     except sqlite3.IntegrityError:
         close_db(conn)
 
@@ -92,7 +92,7 @@ def storeGitToken(token: str, user_id: str):
         return False
 
 
-def getGitToken(user_id: str):
+def getGitToken(user_id: str) -> str:
     try:
         conn, cursor = connect_db()
         cursor.execute("SELECT token FROM githubTokens WHERE user_id=?", (user_id,))
