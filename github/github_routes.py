@@ -65,7 +65,7 @@ async def connectGithub(code: GitHubCode, user_id=Depends(auth_handler.authWrapp
 async def getRepos(user_id=Depends(auth_handler.authWrapper)):
     token = getGitToken(user_id)
     if token:
-        headers = {"Authorization": f"Bearer {token[0]}"}
+        headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient() as client:
             response = await client.get("https://api.github.com/user/repos", headers=headers)
 
@@ -93,7 +93,7 @@ async def getRepoOverview(repoOwner: str, repoName: str, user_id=Depends(auth_ha
     # Fetch repository information from GitHub API
     repo_url = f"https://api.github.com/repos/{repoOwner}/{repoName}"
     async with httpx.AsyncClient() as client:
-        repo_response = await client.get(repo_url, headers={"Authorization": f"Bearer {token[0]}"})
+        repo_response = await client.get(repo_url, headers={"Authorization": f"Bearer {token}"})
     repo_data = repo_response.json()
 
     # Extract relevant repository information
@@ -107,13 +107,13 @@ async def getRepoOverview(repoOwner: str, repoName: str, user_id=Depends(auth_ha
     # Fetch contributors from GitHub API
     contributors_url = f"https://api.github.com/repos/{repoOwner}/{repoName}/contributors"
     async with httpx.AsyncClient() as client:
-        contributors_response = await client.get(contributors_url, headers={"Authorization": f"Bearer {token[0]}"})
+        contributors_response = await client.get(contributors_url, headers={"Authorization": f"Bearer {token}"})
     contributors_data = contributors_response.json()
 
     # Fetch all commits for the repository
     commits_url = f"https://api.github.com/repos/{repoOwner}/{repoName}/commits"
     async with httpx.AsyncClient() as client:
-        commits_response = await client.get(commits_url, headers={"Authorization": f"Bearer {token[0]}"})
+        commits_response = await client.get(commits_url, headers={"Authorization": f"Bearer {token}"})
     commits_data = commits_response.json()
 
     # Create a dictionary to store the commit count for each contributor
@@ -138,7 +138,7 @@ async def getRepoOverview(repoOwner: str, repoName: str, user_id=Depends(auth_ha
     # Fetch language distribution from GitHub API
     languages_url = f"https://api.github.com/repos/{repoOwner}/{repoName}/languages"
     async with httpx.AsyncClient() as client:
-        languages_response = await client.get(languages_url, headers={"Authorization": f"Bearer {token[0]}"})
+        languages_response = await client.get(languages_url, headers={"Authorization": f"Bearer {token}"})
     languages_data = languages_response.json()
 
     # Organize language data for the donut chart
@@ -163,7 +163,7 @@ async def getRepoOverview(repoOwner: str, repoName: str, user_id=Depends(auth_ha
     params = {"since": since_date, "per_page": 5}
     async with httpx.AsyncClient() as client:
         commits_response = await client.get(commits_url, params=params,
-                                            headers={"Authorization": f"Bearer {token[0]}"})
+                                            headers={"Authorization": f"Bearer {token}"})
     commits_data = commits_response.json()
 
     # Extract relevant commit information
@@ -194,7 +194,7 @@ async def getRepoOverview(repoOwner: str, repoName: str, user_id=Depends(auth_ha
 async def getCommits(repoOwner: str, repoName: str, user_id=Depends(auth_handler.authWrapper)):
     token = getGitToken(user_id)
     if token:
-        headers = {"Authorization": f"Bearer {token[0]}"}
+        headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"https://api.github.com/repos/{repoOwner}/{repoName}/commits",
@@ -214,7 +214,7 @@ async def getCommits(repoOwner: str, repoName: str, user_id=Depends(auth_handler
 async def getCommitChanges(sha: str, repoOwner: str, repoName: str, user_id=Depends(auth_handler.authWrapper)):
     token = getGitToken(user_id)
     if token:
-        headers = {"Authorization": f"Bearer {token[0]}"}
+        headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"https://api.github.com/repos/{repoOwner}/{repoName}/commits/{sha}",

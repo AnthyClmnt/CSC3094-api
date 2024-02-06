@@ -6,3 +6,4 @@ passlib~=1.7.4
 python-dotenv~=1.0.0
 httpx~=0.26.0
 bcrypt==4.1.2
+cryptography==42.0.2

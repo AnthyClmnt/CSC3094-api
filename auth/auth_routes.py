@@ -49,7 +49,7 @@ async def validateToken(token: Token):
     if token is None:
         return False
     else:
-        headers = {"Authorization": f"Bearer {token[0]}"}
+        headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"https://api.github.com/issues",

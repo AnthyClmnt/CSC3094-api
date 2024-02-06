@@ -2,6 +2,7 @@
 import sqlite3
 from fastapi import HTTPException
 import models
+from encryption import encryptToken, decrypt_token
 
 DB_PATH = "example.db"
 
@@ -82,9 +83,10 @@ def getUser(user_id: int):
 
 
 def storeGitToken(token: str, user_id: str):
+    encrypted_token = encryptToken(token)
     try:
         conn, cursor = connect_db()
-        cursor.execute("INSERT INTO githubTokens (user_id, token) VALUES  (?, ?)", (user_id, token))
+        cursor.execute("INSERT INTO githubTokens (user_id, token) VALUES  (?, ?)", (user_id, encrypted_token))
         close_db(conn)
 
         return True
@@ -92,7 +94,7 @@ def storeGitToken(token: str, user_id: str):
         return False
 
 
-def getGitToken(user_id: str) -> str:
+def getGitToken(user_id: str):
     try:
         conn, cursor = connect_db()
         cursor.execute("SELECT token FROM githubTokens WHERE user_id=?", (user_id,))
@@ -100,7 +102,10 @@ def getGitToken(user_id: str) -> str:
 
         close_db(conn)
 
-        return token
+        if token:
+            return decrypt_token(token[0])
+        else:
+            return None
     except Exception:
         raise HTTPException(status_code=400, detail="Unable to find Github access token")
 
