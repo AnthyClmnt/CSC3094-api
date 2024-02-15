@@ -7,9 +7,6 @@ import os
 
 
 class AuthHandler:
-    def __init__(self):
-        self.secret = str(os.getenv("JWT_SECRET"))
-
     security = HTTPBearer()
     pwd_context = CryptContext(schemes=['bcrypt'], deprecated="auto")
 
@@ -18,6 +15,9 @@ class AuthHandler:
 
     def verifyPassword(self, plainPassword, hashedPassword):
         return self.pwd_context.verify(plainPassword, hashedPassword)
+
+    def getSecret(self):
+        return os.getenv("JWT_SECRET")
 
     def encodeToken(self, userId, expiration_minutes=20):
         payload = {
@@ -28,13 +28,13 @@ class AuthHandler:
         }
         return jwt.encode(
             payload,
-            self.secret,
+            self.getSecret(),
             algorithm='HS256'
         )
 
     def decodeToken(self, token, boolResp=False):
         try:
-            payload = jwt.decode(token, self.secret, algorithms=['HS256'])
+            payload = jwt.decode(token, self.getSecret(), algorithms=['HS256'])
             if boolResp:
                 return True
             return payload['sub']

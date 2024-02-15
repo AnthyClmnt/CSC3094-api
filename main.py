@@ -19,6 +19,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to the Api"}
+
+
 # Include API routes
 app.include_router(auth_routes.auth_router)
 app.include_router(user_routes.user_router)
