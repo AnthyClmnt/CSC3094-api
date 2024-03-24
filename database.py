@@ -2,7 +2,8 @@
 import sqlite3
 from fastapi import HTTPException
 import models
-from encryption import encryptToken, decrypt_token
+from utils import encryptToken, decrypt_token
+from datetime import datetime
 
 DB_PATH = "example.db"
 
@@ -26,18 +27,39 @@ def create_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT NOT NULL,
                 password TEXT NOT NULL,
-                forename TEXT,
-                githubConnected INTEGER NOT NULL 
+                forename TEXT
             )
         """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS githubTokens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER UNIQUE,
                 token TEXT                
             )
         """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS repoLastAnalysed (
+                repo_owner TEXT,
+                repo_name TEXT,
+                last_updated DATETIME,
+                PRIMARY KEY (repo_owner, repo_name)
+            )
+        """)
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS commitFileAnalysis (
+            repo_owner TEXT,
+            repo_name TEXT,
+            commit_sha TEXT,
+            author TEXT,
+            filename TEXT,
+            complexity INTEGER,
+            maintain_index FLOAT,
+            ltc_ratio FLOAT,
+            PRIMARY KEY (commit_sha, filename, repo_owner, repo_name)
+        )
+    ''')
 
     close_db(conn)
 
@@ -53,7 +75,7 @@ def register(user: models.UserRegistration):
 
     try:
         # Insert the new user
-        cursor.execute("INSERT INTO users (email, password, forename, githubConnected) VALUES (?, ?, ?, 0)",
+        cursor.execute("INSERT INTO users (email, password, forename) VALUES (?, ?, ?)",
                        (user.email.lower(), user.password, user.forename))
         cursor.execute("SELECT id FROM users WHERE email=?", (user.email.lower(),))
         user_id = cursor.fetchone()
@@ -75,7 +97,7 @@ def login(user: models.UserLogin):
 
 def getUser(user_id: int):
     conn, cursor = connect_db()
-    cursor.execute("SELECT id, email, forename, githubConnected FROM users WHERE id=?", (user_id,))
+    cursor.execute("SELECT id, email, forename FROM users WHERE id=?", (user_id,))
     db_user = cursor.fetchone()
 
     close_db(conn)
@@ -118,3 +140,61 @@ def removeGitHubToken(user_id: str):
         close_db(conn)
     except Exception:
         raise HTTPException(status_code=500, detail="Unable to remove Github access token")
+
+
+def getRepoLastAnalysedTime(repoName: str, repoOwner: str):
+    conn, cursor = connect_db()
+    cursor.execute("SELECT last_updated FROM repoLastAnalysed WHERE repo_name=? AND repo_owner=?",
+                   (repoName, repoOwner))
+    lastUpdated = cursor.fetchone()
+
+    close_db(conn)
+
+    if lastUpdated:
+        return lastUpdated[0]
+    return None
+
+
+def setLastAnalysedTime(repoOwner: str, repoName: str):
+    conn, cursor = connect_db()
+    cursor.execute(
+        "INSERT INTO repoLastAnalysed (repo_owner, repo_name, last_updated) VALUES (?, ?, ?) ON CONFLICT(repo_owner, "
+        "repo_name) DO UPDATE SET last_updated = ?",
+        (repoOwner, repoName, datetime.now(), datetime.now()))
+
+    close_db(conn)
+
+
+def getRepoAnalysis(repo_owner, repo_name, orderBy='complexity'):
+    try:
+        conn, cursor = connect_db()
+        query = f"SELECT * FROM commitFileAnalysis WHERE repo_name=? AND repo_owner=? ORDER BY {orderBy} DESC"
+        cursor.execute(query, (repo_name, repo_owner))
+        analysis = cursor.fetchall()
+
+        close_db(conn)
+
+        if analysis:
+            return analysis
+        return None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def insert_commit_complexity(repo_owner,
+                             repo_name,
+                             commit_sha,
+                             author,
+                             filename,
+                             complexity,
+                             maintain_index,
+                             ltc_ratio):
+    try:
+        conn, cursor = connect_db()
+        cursor.execute("INSERT INTO commitFileAnalysis (repo_owner, repo_name, commit_sha, author, filename, "
+                       "complexity, maintain_index, ltc_ratio) VALUES  (?, ?, ?, ?, ?, ?, ?, ?)", (repo_owner, repo_name, commit_sha, author,
+                                                                 filename, complexity, maintain_index, ltc_ratio))
+
+        close_db(conn)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

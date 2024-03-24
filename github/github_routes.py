@@ -1,14 +1,16 @@
 from fastapi import APIRouter, HTTPException, Depends
 from auth.auth_utils import AuthHandler
-from models import GitHubCode, GitHubRepo, RepoCommit, CommitDetails, CommitStats, CommitFiles
-from typing import List
+from models import GitHubCode, GitHubRepo, RepoCommit, CommitDetails, CommitStats, CommitFile
+from typing import List, Optional
 import httpx
 import os
-from database import storeGitToken, getGitToken
+from database import storeGitToken, getGitToken, getRepoLastAnalysedTime, insert_commit_complexity, setLastAnalysedTime, getRepoAnalysis
 from fastapi.responses import JSONResponse
 from pydantic import HttpUrl
 import json
 import datetime
+from analysis import calculate_cyclomatic_complexity, calculate_lines_to_comments_ratio, calculate_maintainability_index
+from utils import grade_complexity, grade_comment_ratio, grade_maintainability
 
 auth_handler = AuthHandler()
 
@@ -90,114 +92,149 @@ async def getRepos(user_id=Depends(auth_handler.authWrapper)):
 async def getRepoOverview(repoOwner: str, repoName: str, user_id=Depends(auth_handler.authWrapper)):
     token = getGitToken(user_id)
 
-    # Fetch repository information from GitHub API
     repo_url = f"https://api.github.com/repos/{repoOwner}/{repoName}"
     async with httpx.AsyncClient() as client:
         repo_response = await client.get(repo_url, headers={"Authorization": f"Bearer {token}"})
     repo_data = repo_response.json()
 
-    # Extract relevant repository information
-    repo_info = {
-        "name": repo_data["name"],
-        "description": repo_data["description"],
-        "owner": repoOwner,
-        # Add other relevant fields
-    }
+    if 'message' in repo_data and repo_data['message'] == 'Not Found':
+        raise HTTPException(status_code=404, detail="Repository not Found")
 
-    # Fetch contributors from GitHub API
-    contributors_url = f"https://api.github.com/repos/{repoOwner}/{repoName}/contributors"
-    async with httpx.AsyncClient() as client:
-        contributors_response = await client.get(contributors_url, headers={"Authorization": f"Bearer {token}"})
-    contributors_data = contributors_response.json()
+    last_analysed = getRepoLastAnalysedTime(repoName, repoOwner)
+    analysis = getRepoAnalysis(repoOwner, repoName)
 
-    # Fetch all commits for the repository
-    commits_url = f"https://api.github.com/repos/{repoOwner}/{repoName}/commits"
-    async with httpx.AsyncClient() as client:
-        commits_response = await client.get(commits_url, headers={"Authorization": f"Bearer {token}"})
-    commits_data = commits_response.json()
+    struct_anal = []
+    total_complexity_files = 0
+    total_complexity = 0
+    total_comment_ratio_files = 0
+    total_comment_ratio = 0.0
+    total_mi_files = 0
+    total_mi = 0.0
 
-    # Create a dictionary to store the commit count for each contributor
-    commit_counts = {contributor["login"]: 0 for contributor in contributors_data}
+    if analysis:
+        for i, file in enumerate(analysis):
+            file_anal = {
+                "sha": file[2],
+                "author": file[3],
+                "fileName": file[4],
+                "complexity": file[5],
+                "maintain_index": file[6],
+                "ltc_ratio": file[7]
+            }
 
-    for commit in commits_data:
-        author_login = commit["author"]["login"] if commit["author"] else None
-        print(author_login)
-        if author_login in commit_counts:
-            commit_counts[author_login] += 1
+            if file_anal['complexity'] is not None:
+                result = grade_complexity(file_anal['complexity'])
 
-    # Extract contributor information (name and profile image)
-    contributors_info = [
-        {
-            "name": contributor["login"],
-            "avatar_url": contributor["avatar_url"],
-            "commit_count": commit_counts.get(contributor["login"], 0)
-        }
-        for contributor in contributors_data
-    ]
+                file_anal['gradeText'] = result[0]
+                file_anal['grade'] = result[1]
+                file_anal['gradeClass'] = result[2]
 
-    # Fetch language distribution from GitHub API
-    languages_url = f"https://api.github.com/repos/{repoOwner}/{repoName}/languages"
-    async with httpx.AsyncClient() as client:
-        languages_response = await client.get(languages_url, headers={"Authorization": f"Bearer {token}"})
-    languages_data = languages_response.json()
+                total_complexity += file_anal['complexity']
+                total_complexity_files += 1
 
-    # Organize language data for the donut chart
-    language_labels = list(languages_data.keys())
-    language_values = list(languages_data.values())
-    language_percentages = [(value / sum(languages_data.values())) * 100 for value in language_values]
-    language_colours = [get_language_colour(language) for language in language_labels]
+            if file_anal['ltc_ratio'] is not None:
+                result = grade_comment_ratio(file_anal['ltc_ratio'])
 
-    # Round each value to two decimal places
-    rounded_values = [round(value, 2) for value in language_percentages]
+                file_anal['commentGrade'] = result[0]
+                file_anal['commentGradeClass'] = result[1]
 
-    # Calculate the adjustment needed to make the sum exactly 100
-    adjustment = 100 - sum(rounded_values)
+                total_comment_ratio += file_anal['ltc_ratio']
+                total_comment_ratio_files += 1
 
-    if language_percentages:
-        # Use a more sophisticated rounding for the last value
-        rounded_values[-1] = round(language_percentages[-1] + adjustment, 2)
+            if file_anal['maintain_index'] is not None:
+                result = grade_maintainability(file_anal['maintain_index'])
 
-    # Fetch the last 5 commits within the last week
-    since_date = (datetime.datetime.now() - datetime.timedelta(days=30)).isoformat()
-    commits_url = f"https://api.github.com/repos/{repoOwner}/{repoName}/commits"
-    params = {"since": since_date, "per_page": 5}
-    async with httpx.AsyncClient() as client:
-        commits_response = await client.get(commits_url, params=params,
-                                            headers={"Authorization": f"Bearer {token}"})
-    commits_data = commits_response.json()
+                file_anal['maintainabilityGrade'] = result[0]
+                file_anal['maintainabilityGradeClass'] = result[1]
 
-    # Extract relevant commit information
-    last_commits = [
-        {
-            "sha": commit["sha"],
-            "message": commit["commit"]["message"],
-            "author": commit["commit"]["author"]["name"],
-            "timestamp": commit["commit"]["author"]["date"]
-        }
-        for commit in commits_data
-    ]
+                total_mi += file_anal['maintain_index']
+                total_mi_files += 1
+
+            struct_anal.append(file_anal)
+
+    average_complexity = round(total_complexity / total_complexity_files, 2) if total_complexity_files != 0 else 0
+    average_comment_ratio = round(total_comment_ratio / total_comment_ratio_files,
+                                  2) if total_comment_ratio_files != 0 else 0
+    average_mi = round(total_mi / total_mi_files, 2) if total_mi_files != 0 else 0
+
+    average_complexity_grades = grade_complexity(average_complexity)
+    average_comments_ratio_grades = grade_comment_ratio(average_comment_ratio)
+    average_mi_grades = grade_maintainability(average_mi)
 
     return {
-        "repo_info": repo_info,
-        "contributors": contributors_info,
-        "language_distribution": {
-            "total": rounded_values,
-            "labels": language_labels,
-            "values": language_values,
-            "colours": language_colours
-        },
-        "last_commits": last_commits
+        "description": repo_data["description"],
+        "title": repo_data["full_name"],
+        "githubLink": repo_data["html_url"],
+        "visibility": repo_data["private"],
+        "owner_url": repo_data["owner"]["avatar_url"],
+        "lastAnalysed": last_analysed,
+        "analysis": struct_anal,
+        "averageComplexity": average_complexity,
+        "averageComplexityGrade": average_complexity_grades[1],
+        "averageComplexityGradeClass": average_complexity_grades[2],
+        "averageCommentRatio": average_comment_ratio,
+        "averageCommentRatioGrade": average_comments_ratio_grades[0],
+        "averageCommentRatioClass": average_comments_ratio_grades[1],
+        "averageMaintainability": average_mi,
+        "averageMaintainabilityGrade": average_mi_grades[0],
+        "averageMaintainabilityClass": average_mi_grades[1]
+
     }
+
+
+@github_router.get("/update-repo")
+async def updateRepo(repoOwner: str, repoName: str, user_id=Depends(auth_handler.authWrapper)):
+    last_updated = getRepoLastAnalysedTime(repoName, repoOwner)
+    try:
+        commits = await getCommits(repoOwner, repoName, last_updated, user_id)
+
+        for commit in commits:
+            commitChanges = await getCommitChanges(commit.sha, repoOwner, repoName, user_id)
+
+            for file in commitChanges.files:
+                cc = calculate_cyclomatic_complexity(file.patch, file.filename)
+                mi = calculate_maintainability_index(file.patch, file.filename, cc)
+                ltc = calculate_lines_to_comments_ratio(file.patch, file.filename)
+
+                if cc is None and mi is None and ltc is None:
+                    continue
+
+                insert_commit_complexity(
+                    repoOwner,
+                    repoName,
+                    commit.sha,
+                    commit.commit.author.name,
+                    file.filename,
+                    cc,
+                    mi,
+                    ltc
+                )
+
+        setLastAnalysedTime(repoOwner, repoName)
+        overview = await getRepoOverview(repoOwner, repoName, user_id)
+
+        return overview, len(commits)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @github_router.get("/commits", response_model=List[RepoCommit])
-async def getCommits(repoOwner: str, repoName: str, user_id=Depends(auth_handler.authWrapper)):
+async def getCommits(repoOwner: str, repoName: str, since: Optional[str] = None,
+                     user_id=Depends(auth_handler.authWrapper)):
     token = getGitToken(user_id)
     if token:
         headers = {"Authorization": f"Bearer {token}"}
+        params = {"per_page": 100}
+
+        if since:
+            since_datetime = datetime.datetime.strptime(since, "%Y-%m-%d %H:%M:%S.%f")
+            since_isoformat = since_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")
+            params['since'] = since_isoformat
+
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"https://api.github.com/repos/{repoOwner}/{repoName}/commits",
+                params=params,
                 headers=headers
             )
 
@@ -228,9 +265,67 @@ async def getCommitChanges(sha: str, repoOwner: str, repoName: str, user_id=Depe
                 sha=repo_commits_details['sha'],
                 commit=repo_commits_details['commit'],
                 stats=CommitStats(**repo_commits_details['stats']),
-                files=[CommitFiles(**file_data) for file_data in repo_commits_details['files']]
+                files=[CommitFile(**file_data) for file_data in repo_commits_details['files']]
             )
 
             return commitDetails
     else:
         raise HTTPException(status_code=400, detail="Github not connected")
+
+
+@github_router.get("/commit/changes/file", response_model=CommitFile)
+async def getCommitChangesFile(sha: str,
+                               repoOwner: str,
+                               repoName: str,
+                               filename: str,
+                               user_id=Depends(auth_handler.authWrapper)):
+    shaChanges = await getCommitChanges(sha, repoOwner, repoName, user_id)
+    commit_files = shaChanges.files
+    filtered_files = [file for file in commit_files if file.filename == filename]
+    return filtered_files[0]
+
+
+@github_router.get("/issues")
+async def GetIssues(repoOwner: str, repoName: str):
+    analysis = getRepoAnalysis(repoOwner, repoName)
+
+    struct_anal = []
+
+    if analysis:
+        for i, file in enumerate(analysis):
+            file_anal = {
+                "sha": file[2],
+                "author": file[3],
+                "fileName": file[4],
+                "complexity": file[5],
+                "maintain_index": file[6],
+                "ltc_ratio": file[7],
+            }
+
+            if file_anal['complexity'] is not None:
+                result = grade_complexity(file_anal['complexity'])
+
+                file_anal['gradeText'] = result[0]
+                file_anal['grade'] = result[1]
+                file_anal['gradeClass'] = result[2]
+
+            if file_anal['ltc_ratio'] is not None:
+                result = grade_comment_ratio(file_anal['ltc_ratio'])
+
+                file_anal['commentGrade'] = result[0]
+                file_anal['commentGradeClass'] = result[1]
+
+            if file_anal['maintain_index'] is not None:
+                result = grade_maintainability(file_anal['maintain_index'])
+
+                file_anal['maintainabilityGrade'] = result[0]
+                file_anal['maintainabilityGradeClass'] = result[1]
+
+            struct_anal.append(file_anal)
+
+        return struct_anal
+
+
+@github_router.patch("commit/analysis/remove-issue")
+async def RemoveFileIssue():
+    return True

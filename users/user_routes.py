@@ -15,4 +15,4 @@ user_router = APIRouter(
 @user_router.get('/me', response_model=User)
 async def userInfo(user_id=Depends(auth_handler.authWrapper)):
     user = database.getUser(user_id)
-    return User(id=user[0], email=user[1], forename=user[2], githubConnected=bool(user[3]))
+    return User(id=user[0], email=user[1], forename=user[2])

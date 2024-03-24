@@ -18,7 +18,6 @@ class User(BaseModel):
     id: int
     email: str
     forename: str
-    githubConnected: bool
 
 
 class GitHubCode(BaseModel):
@@ -72,7 +71,7 @@ class CommitStats(BaseModel):
     deletions: int
 
 
-class CommitFiles(BaseModel):
+class CommitFile(BaseModel):
     filename: str
     status: str
     additions: int
@@ -85,4 +84,8 @@ class CommitDetails(BaseModel):
     sha: str
     commit: Commit
     stats: CommitStats
-    files: List[CommitFiles]
+    files: List[CommitFile]
+
+
+class CommitAnalysis(BaseModel):
+    concur: str
