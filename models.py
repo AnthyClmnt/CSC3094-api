@@ -29,14 +29,14 @@ class Token(BaseModel):
     refreshToken: str
 
 
-class RepoOwner(BaseModel):
+class RepoContributor(BaseModel):
     avatarUrl: HttpUrl = Field(validation_alias="avatar_url")
     name: str = Field(validation_alias="login")
 
 
 class GitHubRepo(BaseModel):
     repoName: str = Field(validation_alias="name")
-    owner: RepoOwner
+    owner: RepoContributor
     commitsUrl: HttpUrl = Field(validation_alias="commits_url")
     visibility: str
     description: Optional[str] = None

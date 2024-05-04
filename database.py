@@ -57,6 +57,7 @@ def create_db():
             complexity INTEGER,
             maintain_index FLOAT,
             ltc_ratio FLOAT,
+            commit_date DATETIME,
             PRIMARY KEY (commit_sha, filename, repo_owner, repo_name)
         )
     ''')
@@ -188,13 +189,68 @@ def insert_commit_complexity(repo_owner,
                              filename,
                              complexity,
                              maintain_index,
-                             ltc_ratio):
+                             ltc_ratio,
+                             commit_date):
     try:
         conn, cursor = connect_db()
         cursor.execute("INSERT INTO commitFileAnalysis (repo_owner, repo_name, commit_sha, author, filename, "
-                       "complexity, maintain_index, ltc_ratio) VALUES  (?, ?, ?, ?, ?, ?, ?, ?)", (repo_owner, repo_name, commit_sha, author,
-                                                                 filename, complexity, maintain_index, ltc_ratio))
+                       "complexity, maintain_index, ltc_ratio, commit_date) VALUES  (?, ?, ?, ?, ?, ?, ?, ?, ?)", (repo_owner, repo_name, commit_sha, author,
+                                                                 filename, complexity, maintain_index, ltc_ratio, commit_date))
 
         close_db(conn)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_repo_contributors(repoOwner: str, repoName: str):
+    try:
+        conn, cursor = connect_db()
+        cursor.execute("SELECT DISTINCT author FROM commitFileAnalysis WHERE repo_name=? AND repo_owner=?",
+                       (repoName, repoOwner))
+        contributors = cursor.fetchall()
+
+        close_db(conn)
+        return contributors
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_repo_contributor_data(repoOwner: str, repoName: str, contributor: str):
+    try:
+        conn, cursor = connect_db()
+        cursor.execute("SELECT DATE(commit_date) as commit_date, COUNT(DISTINCT commit_sha) AS commit_count FROM commitFileAnalysis WHERE repo_name=? AND repo_owner=? AND author=? GROUP BY DATE(commit_date) ORDER BY commit_date ASC",
+                       (repoName, repoOwner, contributor))
+        contributor_data = cursor.fetchall()
+
+        close_db(conn)
+        return contributor_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_repo_contributor_analysis(repo_owner: str, repo_name: str, author: str):
+    try:
+        conn, cursor = connect_db()
+        cursor.execute("""
+            SELECT 
+                DATE(commit_date) as commit_date,
+                AVG(maintain_index) AS avg_maintain_index,
+                AVG(ltc_ratio) AS avg_ltc_ratio,
+                AVG(complexity) AS avg_complexity
+            FROM 
+                commitFileAnalysis
+            WHERE 
+                repo_name = ? 
+                AND repo_owner = ? 
+                AND author = ?
+            GROUP BY 
+                strftime('%Y-%m', commit_date)
+            ORDER BY 
+                commit_date ASC
+        """, (repo_name, repo_owner, author))
+        contributor_data = cursor.fetchall()
+
+        close_db(conn)
+        return contributor_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

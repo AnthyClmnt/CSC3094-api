@@ -1,5 +1,6 @@
 # main.py
 from fastapi import FastAPI
+import uvicorn
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from auth import auth_routes
@@ -32,3 +33,7 @@ app.include_router(github_routes.github_router)
 
 # Create SQLite database connection
 database.create_db()
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="127.0.0.1", port=8000)

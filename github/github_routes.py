@@ -1,10 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends
 from auth.auth_utils import AuthHandler
-from models import GitHubCode, GitHubRepo, RepoCommit, CommitDetails, CommitStats, CommitFile
+from models import GitHubCode, GitHubRepo, RepoCommit, CommitDetails, CommitStats, CommitFile, RepoContributor
 from typing import List, Optional
 import httpx
 import os
-from database import storeGitToken, getGitToken, getRepoLastAnalysedTime, insert_commit_complexity, setLastAnalysedTime, getRepoAnalysis
+from database import storeGitToken, getGitToken, getRepoLastAnalysedTime, insert_commit_complexity, setLastAnalysedTime, \
+    getRepoAnalysis, get_repo_contributors, get_repo_contributor_data, get_repo_contributor_analysis
 from fastapi.responses import JSONResponse
 from pydantic import HttpUrl
 import json
@@ -119,7 +120,8 @@ async def getRepoOverview(repoOwner: str, repoName: str, user_id=Depends(auth_ha
                 "fileName": file[4],
                 "complexity": file[5],
                 "maintain_index": file[6],
-                "ltc_ratio": file[7]
+                "ltc_ratio": file[7],
+                "commit_date": file[8]
             }
 
             if file_anal['complexity'] is not None:
@@ -178,7 +180,6 @@ async def getRepoOverview(repoOwner: str, repoName: str, user_id=Depends(auth_ha
         "averageMaintainability": average_mi,
         "averageMaintainabilityGrade": average_mi_grades[0],
         "averageMaintainabilityClass": average_mi_grades[1]
-
     }
 
 
@@ -207,7 +208,8 @@ async def updateRepo(repoOwner: str, repoName: str, user_id=Depends(auth_handler
                     file.filename,
                     cc,
                     mi,
-                    ltc
+                    ltc,
+                    commit.commit.author.date
                 )
 
         setLastAnalysedTime(repoOwner, repoName)
@@ -300,6 +302,7 @@ async def GetIssues(repoOwner: str, repoName: str):
                 "complexity": file[5],
                 "maintain_index": file[6],
                 "ltc_ratio": file[7],
+                "commit_date": file[8]
             }
 
             if file_anal['complexity'] is not None:
@@ -326,6 +329,20 @@ async def GetIssues(repoOwner: str, repoName: str):
         return struct_anal
 
 
-@github_router.patch("commit/analysis/remove-issue")
+@github_router.get("/repository-contributors")
+async def get_repository_contributors(repoOwner: str, repoName: str):
+    contributors = get_repo_contributors(repoOwner, repoName)
+    return contributors
+
+
+@github_router.get("/repository-contributor/report")
+async def get_repository_contributor_report(repoOwner: str, repoName: str, contributor: str):
+    contributor_data = get_repo_contributor_data(repoOwner, repoName, contributor)
+    contributor_avg = get_repo_contributor_analysis(repoOwner, repoName, contributor)
+
+    return contributor_data, contributor_avg
+
+
+@github_router.patch("/analysis/remove-issue")
 async def RemoveFileIssue():
     return True
